@@ -1,4 +1,4 @@
-# 📬 Java GUI Chat App
+# 📬 WeChat App
 
 A simple, multi-user chat application built in Java using Swing. It supports:
 
