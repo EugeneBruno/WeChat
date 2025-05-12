@@ -24,6 +24,7 @@ JavaChatApp/
 │   ├── LoginWindow.java
 │   └── ChatWindow.java
 └── README.md
+└── .gitignore
 ```
 
 ---
