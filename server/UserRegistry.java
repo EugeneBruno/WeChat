@@ -5,6 +5,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public class UserRegistry {
     private ConcurrentHashMap<String, User> users = new ConcurrentHashMap<>();
 
+    // Make sure the constructor is public
+    public UserRegistry() {
+    }
+
     public boolean registerUser(String username, ClientHandler handler) {
         return users.putIfAbsent(username, new User(username, handler)) == null;
     }
@@ -21,4 +25,3 @@ public class UserRegistry {
         users.remove(username);
     }
 }
-

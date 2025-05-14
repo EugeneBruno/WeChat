@@ -2,135 +2,154 @@ package client;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.*;
 import java.io.*;
 import java.net.*;
 import java.util.HashMap;
 import java.util.Map;
 
 public class ChatWindow extends JFrame {
-    private PrintWriter out;
-    private BufferedReader in;
-    private String username;
+    private final String username;
+    private final Socket socket;
+    private final BufferedReader in;
+    private final PrintWriter out;
+    private final JComboBox<String> userSelector;
+    private final JTextField messageInput;
+    private final JPanel chatPanelContainer;
+    private final CardLayout cardLayout;
+    private final Map<String, JTextArea> chatAreas = new HashMap<>();
+    private final Map<String, JLabel> typingLabels = new HashMap<>();
 
-    private JTextField searchField;
-    private JComboBox<String> userSelector;
-    private JTextField inputField;
-    private JPanel chatPanel;
-    private Map<String, JTextArea> chatAreas = new HashMap<>();
-
-    public ChatWindow(String username) {
+    public ChatWindow(String username) throws IOException {
         this.username = username;
+        this.socket = new Socket("localhost", 12345);
+        this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        this.out = new PrintWriter(socket.getOutputStream(), true);
+
         setTitle("Chat - " + username);
-        setSize(600, 450);
+        setSize(500, 500);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        // 🔼 Top Panel
-        JPanel topPanel = new JPanel();
-        searchField = new JTextField(15);
-        JButton searchBtn = new JButton("Open Chat");
+        out.println(username);
+
         userSelector = new JComboBox<>();
-        topPanel.add(new JLabel("To:"));
+        JTextField searchField = new JTextField(10);
+        JButton openChatBtn = new JButton("Open Chat");
+
+        JPanel topPanel = new JPanel();
+        topPanel.add(new JLabel("Search User:"));
         topPanel.add(searchField);
-        topPanel.add(searchBtn);
+        topPanel.add(openChatBtn);
         topPanel.add(userSelector);
         add(topPanel, BorderLayout.NORTH);
 
-        // 🧩 Chat Area Panel (CardLayout)
-        chatPanel = new JPanel(new CardLayout());
-        add(chatPanel, BorderLayout.CENTER);
+        chatPanelContainer = new JPanel();
+        cardLayout = new CardLayout();
+        chatPanelContainer.setLayout(cardLayout);
+        add(chatPanelContainer, BorderLayout.CENTER);
 
-        // 🔽 Input Panel
-        JPanel inputPanel = new JPanel();
-        inputField = new JTextField(30);
-        JButton sendBtn = new JButton("Send");
-        inputPanel.add(inputField);
-        inputPanel.add(sendBtn);
-        add(inputPanel, BorderLayout.SOUTH);
+        messageInput = new JTextField();
+        add(messageInput, BorderLayout.SOUTH);
 
-        setVisible(true);
-
-        // 🌐 Connect to server
-        try {
-            Socket socket = new Socket("localhost", 12345); // Change to IP for LAN
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            out = new PrintWriter(socket.getOutputStream(), true);
-
-            // Send username
-            in.readLine(); // "Enter username:"
-            out.println(username);
-            in.readLine(); // "Welcome ..."
-
-            // Start receiving messages
-            new Thread(() -> {
-                try {
-                    String msg;
-                    while ((msg = in.readLine()) != null) {
-                        if (msg.contains(":")) {
-                            final String msgCopy = msg; // ✅ Make a final copy
-                            String from = msg.split(":")[0].trim();
-                            SwingUtilities.invokeLater(() -> {
-                                JTextArea area = getOrCreateChatArea(from);
-                                area.append(msgCopy + "\n");
-                    
-                                if (((DefaultComboBoxModel<String>) userSelector.getModel()).getIndexOf(from) == -1) {
-                                    userSelector.addItem(from);
-                                }
-                            });
-                        }
-                    }
-                    
-                } catch (IOException e) {
-                    e.printStackTrace();
+        openChatBtn.addActionListener(e -> {
+            String user = searchField.getText().trim();
+            if (!user.isEmpty()) {
+                if (((DefaultComboBoxModel<String>) userSelector.getModel()).getIndexOf(user) == -1) {
+                    userSelector.addItem(user);
                 }
-            }).start();
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Could not connect to server.");
-            System.exit(1);
-        }
-
-        // 🔍 Open Chat Button
-        searchBtn.addActionListener(e -> {
-            String target = searchField.getText().trim();
-            if (!target.isEmpty()) {
-                getOrCreateChatArea(target);
-                if (((DefaultComboBoxModel<String>) userSelector.getModel()).getIndexOf(target) == -1) {
-                    userSelector.addItem(target);
-                }
-                userSelector.setSelectedItem(target);
-                ((CardLayout) chatPanel.getLayout()).show(chatPanel, target);
+                cardLayout.show(chatPanelContainer, user);
+                userSelector.setSelectedItem(user);
+                getOrCreateChatArea(user);
             }
         });
 
-        // 🔁 Switch between chats
         userSelector.addActionListener(e -> {
             String selectedUser = (String) userSelector.getSelectedItem();
             if (selectedUser != null) {
-                ((CardLayout) chatPanel.getLayout()).show(chatPanel, selectedUser);
+                cardLayout.show(chatPanelContainer, selectedUser);
             }
         });
 
-        // 📨 Send Button
-        sendBtn.addActionListener(e -> {
-            String target = (String) userSelector.getSelectedItem();
-            String msg = inputField.getText().trim();
-            if (target != null && !msg.isEmpty()) {
-                out.println("SEND " + target + " " + msg);
-                JTextArea area = getOrCreateChatArea(target);
-                area.append("Me: " + msg + "\n");
-                inputField.setText("");
+        messageInput.addActionListener(e -> {
+            String selectedUser = (String) userSelector.getSelectedItem();
+            String msg = messageInput.getText().trim();
+            if (!msg.isEmpty() && selectedUser != null) {
+                out.println(selectedUser + ":" + msg);
+                getOrCreateChatArea(selectedUser).append("Me: " + msg + "\n");
+                messageInput.setText("");
             }
         });
+
+        messageInput.addKeyListener(new KeyAdapter() {
+            private long lastSent = 0;
+
+            @Override
+            public void keyPressed(KeyEvent e) {
+                long now = System.currentTimeMillis();
+                if (now - lastSent > 1000) {
+                    String selectedUser = (String) userSelector.getSelectedItem();
+                    if (selectedUser != null) {
+                        out.println("TYPING:" + username + ":" + selectedUser);
+                        lastSent = now;
+                    }
+                }
+            }
+        });
+
+        new Thread(() -> {
+            try {
+                String msg;
+                while ((msg = in.readLine()) != null) {
+                    if (msg.startsWith("TYPING:")) {
+                        String[] parts = msg.split(":", 3);
+                        String from = parts[1];
+                        String to = parts[2];
+                        if (to.equals(username)) {
+                            SwingUtilities.invokeLater(() -> {
+                                JLabel label = typingLabels.get(from);
+                                if (label != null) {
+                                    label.setText(from + " is typing...");
+                                    Timer timer = new Timer(2500, ev -> label.setText(" "));
+                                    timer.setRepeats(false);
+                                    timer.start();
+                                }
+                            });
+                        }
+                    } else if (msg.contains(":")) {
+                        String from = msg.split(":")[0].trim();
+                        final String finalMsg = msg; // Declare finalMsg here
+                        SwingUtilities.invokeLater(() -> {
+                            JTextArea area = getOrCreateChatArea(from);
+                            area.append(finalMsg + "\n"); // Use finalMsg instead of msg
+                            if (((DefaultComboBoxModel<String>) userSelector.getModel()).getIndexOf(from) == -1) {
+                                userSelector.addItem(from);
+                            }
+                        });
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }).start();
+
+        setVisible(true);
     }
 
-    // 📦 Create chat area if not exists
     private JTextArea getOrCreateChatArea(String user) {
         if (!chatAreas.containsKey(user)) {
-            JTextArea area = new JTextArea(15, 40);
+            JPanel panel = new JPanel(new BorderLayout());
+            JTextArea area = new JTextArea();
             area.setEditable(false);
-            JScrollPane scrollPane = new JScrollPane(area);
-            chatPanel.add(scrollPane, user);
+            panel.add(new JScrollPane(area), BorderLayout.CENTER);
+
+            JLabel typingLabel = new JLabel(" ");
+            typingLabel.setFont(new Font("Arial", Font.ITALIC, 10));
+            panel.add(typingLabel, BorderLayout.SOUTH);
+
+            chatPanelContainer.add(panel, user);
             chatAreas.put(user, area);
+            typingLabels.put(user, typingLabel);
         }
         return chatAreas.get(user);
     }

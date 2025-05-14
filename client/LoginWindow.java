@@ -1,6 +1,7 @@
 package client;
 
 import javax.swing.*;
+import java.io.IOException;
 
 public class LoginWindow extends JFrame {
     private JTextField usernameField;
@@ -21,8 +22,12 @@ public class LoginWindow extends JFrame {
         loginButton.addActionListener(e -> {
             String username = usernameField.getText().trim();
             if (!username.isEmpty()) {
-                dispose(); // close login window
-                new ChatWindow(username); // ✅ launch the chat window
+                try {
+                    dispose(); // close login window
+                    new ChatWindow(username); // ✅ launch the chat window
+                } catch (IOException ex) {
+                    JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage());
+                }
             } else {
                 JOptionPane.showMessageDialog(this, "Please enter a username");
             }

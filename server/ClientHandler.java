@@ -10,6 +10,7 @@ public class ClientHandler extends Thread {
     private BufferedReader in;
     private String username;
 
+    // Constructor that accepts Socket and UserRegistry
     public ClientHandler(Socket socket, UserRegistry registry) {
         this.socket = socket;
         this.registry = registry;
@@ -58,4 +59,3 @@ public class ClientHandler extends Thread {
         }
     }
 }
-
