@@ -2,131 +2,98 @@ package client;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.*;
 import java.io.*;
-import java.net.*;
+import java.net.Socket;
 import java.util.HashMap;
-import java.util.Map;
 
 public class ChatWindow extends JFrame {
-    private final String username;
-    private final Socket socket;
-    private final BufferedReader in;
-    private final PrintWriter out;
-    private final JComboBox<String> userSelector;
-    private final JTextField messageInput;
-    private final JPanel chatPanelContainer;
-    private final CardLayout cardLayout;
-    private final Map<String, JTextArea> chatAreas = new HashMap<>();
-    private final Map<String, JLabel> typingLabels = new HashMap<>();
+    private String username;
+    private BufferedReader in;
+    private PrintWriter out;
+    private JTextField inputField;
+    private JButton sendButton;
+    private JComboBox<String> userSelector;
+    private JPanel chatPanel;
+    private HashMap<String, JTextArea> chatAreas = new HashMap<>();
 
     public ChatWindow(String username) throws IOException {
         this.username = username;
-        this.socket = new Socket("localhost", 12345);
-        this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        this.out = new PrintWriter(socket.getOutputStream(), true);
+        Socket socket = new Socket("localhost", 12345);
+        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        out = new PrintWriter(socket.getOutputStream(), true);
+
+        // Send the username to the server
+        out.println(username);
 
         setTitle("Chat - " + username);
-        setSize(500, 500);
+        setSize(500, 400);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        out.println(username);
-
-        userSelector = new JComboBox<>();
+        // Top: Search bar and combo box
+        JPanel topPanel = new JPanel(new FlowLayout());
         JTextField searchField = new JTextField(10);
-        JButton openChatBtn = new JButton("Open Chat");
-
-        JPanel topPanel = new JPanel();
+        JButton openChatButton = new JButton("Open Chat");
+        userSelector = new JComboBox<>();
         topPanel.add(new JLabel("Search User:"));
         topPanel.add(searchField);
-        topPanel.add(openChatBtn);
+        topPanel.add(openChatButton);
         topPanel.add(userSelector);
+
+        // Center: Card layout to switch between chat areas
+        chatPanel = new JPanel(new CardLayout());
+
+        // Bottom: Input field and send button
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+        inputField = new JTextField();
+        sendButton = new JButton("Send");
+        bottomPanel.add(inputField, BorderLayout.CENTER);
+        bottomPanel.add(sendButton, BorderLayout.EAST);
+
         add(topPanel, BorderLayout.NORTH);
+        add(chatPanel, BorderLayout.CENTER);
+        add(bottomPanel, BorderLayout.SOUTH);
 
-        chatPanelContainer = new JPanel();
-        cardLayout = new CardLayout();
-        chatPanelContainer.setLayout(cardLayout);
-        add(chatPanelContainer, BorderLayout.CENTER);
-
-        messageInput = new JTextField();
-        add(messageInput, BorderLayout.SOUTH);
-
-        openChatBtn.addActionListener(e -> {
+        // Action for opening a chat
+        openChatButton.addActionListener(e -> {
             String user = searchField.getText().trim();
-            if (!user.isEmpty()) {
+            if (!user.isEmpty() && !user.equals(username)) {
+                getOrCreateChatArea(user);
                 if (((DefaultComboBoxModel<String>) userSelector.getModel()).getIndexOf(user) == -1) {
                     userSelector.addItem(user);
                 }
-                cardLayout.show(chatPanelContainer, user);
                 userSelector.setSelectedItem(user);
-                getOrCreateChatArea(user);
             }
         });
 
-        userSelector.addActionListener(e -> {
-            String selectedUser = (String) userSelector.getSelectedItem();
-            if (selectedUser != null) {
-                cardLayout.show(chatPanelContainer, selectedUser);
+        // Action for sending a message
+        sendButton.addActionListener(e -> {
+            String message = inputField.getText().trim();
+            String recipient = (String) userSelector.getSelectedItem();
+            if (!message.isEmpty() && recipient != null && !recipient.equals(username)) {
+                out.println("SEND " + recipient + " " + message); // ✅ Correct format
+                JTextArea area = getOrCreateChatArea(recipient);
+                area.append("Me: " + message + "\n");
+                inputField.setText("");
             }
         });
 
-        messageInput.addActionListener(e -> {
-            String selectedUser = (String) userSelector.getSelectedItem();
-            String msg = messageInput.getText().trim();
-            if (!msg.isEmpty() && selectedUser != null) {
-                out.println(selectedUser + ":" + msg);
-                getOrCreateChatArea(selectedUser).append("Me: " + msg + "\n");
-                messageInput.setText("");
-            }
-        });
-
-        messageInput.addKeyListener(new KeyAdapter() {
-            private long lastSent = 0;
-
-            @Override
-            public void keyPressed(KeyEvent e) {
-                long now = System.currentTimeMillis();
-                if (now - lastSent > 1000) {
-                    String selectedUser = (String) userSelector.getSelectedItem();
-                    if (selectedUser != null) {
-                        out.println("TYPING:" + username + ":" + selectedUser);
-                        lastSent = now;
-                    }
-                }
-            }
-        });
-
+        // Thread to read incoming messages
         new Thread(() -> {
             try {
                 String msg;
                 while ((msg = in.readLine()) != null) {
-                    if (msg.startsWith("TYPING:")) {
-                        String[] parts = msg.split(":", 3);
-                        String from = parts[1];
-                        String to = parts[2];
-                        if (to.equals(username)) {
-                            SwingUtilities.invokeLater(() -> {
-                                JLabel label = typingLabels.get(from);
-                                if (label != null) {
-                                    label.setText(from + " is typing...");
-                                    Timer timer = new Timer(2500, ev -> label.setText(" "));
-                                    timer.setRepeats(false);
-                                    timer.start();
-                                }
-                            });
-                        }
-                    } else if (msg.contains(":")) {
-                        String from = msg.split(":")[0].trim();
-                        final String finalMsg = msg; // Declare finalMsg here
-                        SwingUtilities.invokeLater(() -> {
+                    final String finalMsg = msg;
+                    SwingUtilities.invokeLater(() -> {
+                        if (finalMsg.contains(":")) {
+                            String from = finalMsg.split(":")[0].trim();
                             JTextArea area = getOrCreateChatArea(from);
-                            area.append(finalMsg + "\n"); // Use finalMsg instead of msg
+                            area.append(finalMsg + "\n");
                             if (((DefaultComboBoxModel<String>) userSelector.getModel()).getIndexOf(from) == -1) {
                                 userSelector.addItem(from);
                             }
-                        });
-                    }
+                        }
+                    });
                 }
             } catch (IOException e) {
                 e.printStackTrace();
@@ -138,19 +105,14 @@ public class ChatWindow extends JFrame {
 
     private JTextArea getOrCreateChatArea(String user) {
         if (!chatAreas.containsKey(user)) {
-            JPanel panel = new JPanel(new BorderLayout());
             JTextArea area = new JTextArea();
             area.setEditable(false);
-            panel.add(new JScrollPane(area), BorderLayout.CENTER);
-
-            JLabel typingLabel = new JLabel(" ");
-            typingLabel.setFont(new Font("Arial", Font.ITALIC, 10));
-            panel.add(typingLabel, BorderLayout.SOUTH);
-
-            chatPanelContainer.add(panel, user);
+            JScrollPane scrollPane = new JScrollPane(area);
+            chatPanel.add(scrollPane, user);
             chatAreas.put(user, area);
-            typingLabels.put(user, typingLabel);
         }
+        CardLayout cl = (CardLayout) chatPanel.getLayout();
+        cl.show(chatPanel, user);
         return chatAreas.get(user);
     }
 }
